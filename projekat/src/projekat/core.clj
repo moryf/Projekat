@@ -1,6 +1,7 @@
 (ns projekat.core
   (:gen-class))
 
+
 (require '[clojure.math :as math])
 
 (defn sigmoid [x]
@@ -9,54 +10,48 @@
 (defn sigmoid-derivative [x]
   (* (sigmoid x) (- 1 (sigmoid x))))
 
-(defn feed-forward
-  [inputs weights biases]
-  (sigmoid (reduce + (map (fn [i w b] (+ (* i w) b)) inputs weights biases))))
+(defn tanh [x]
+  (/ (- (math/pow Math/E (* 2 x)) 1) (+ (math/pow Math/E (* 2 x)) 1)))
+
+(defn tanh-derivative [x]
+  (- 1 (math/pow (tanh x) 2)))
 
 (defn r-w []
   (- (* 2 (rand)) 1))
 
-(feed-forward [(r-w) (r-w) (r-w)] [(r-w) (r-w) (r-w)] [(r-w) (r-w) (r-w)])
-(sigmoid 1)
-(sigmoid-derivative 1)
+(defrecord Neuron [input-size weights activation-func])
 
-(defrecord Neuron [input-size weights biases])
+(defn create-neuron [input-size activation-func]
+  (Neuron. input-size (vec (repeatedly input-size r-w)) activation-func))
 
-;; Function to create a Neuron
-(defn create-neuron [input-size]
-  (Neuron. input-size
-           (vec (repeatedly input-size r-w))   ;; Random weights
-           (vec (repeatedly input-size r-w)))) ;; Random biases
+(defn feed-forward [neuron inputs]
+  (let [sum (reduce + (map * (:weights neuron) inputs))]
+    (case (:activation-func neuron)
+      :sigmoid (sigmoid sum)
+      :tanh (tanh sum))))
 
-;; Define the Layer record
+(defn back-propagation [neuron inputs target learning-rate]
+  (let [output (feed-forward neuron inputs)
+        error (- target output)
+        delta (* error (case (:activation-func neuron)
+                        :sigmoid (sigmoid-derivative output)
+                        :tanh (tanh-derivative output)))
+        weights (vec (map (fn [w i] (+ w (* learning-rate delta (nth inputs i))))
+                          (:weights neuron)
+                          (range)))]
+    (assoc neuron :weights weights)))
+
 (defrecord Layer [neurons])
 
-;; Function to create a Layer
-(defn create-layer [neuron-count input-size]
-  (Layer. (vec (repeatedly neuron-count #(create-neuron input-size)))))
+(defn create-layer [neuron-count input-size activation-func]
+  (Layer. (vec (repeatedly neuron-count #(create-neuron input-size activation-func)))))
 
-;; Example usage
-(create-layer 3 3)  ;; Create a layer with 3 neurons, each with 3 inputs
+
+(defn feed-forward-layer [layer inputs]
+  (map #(feed-forward % inputs) (:neurons layer)))
+
+(feed-forward-layer (create-layer 3 3 :sigmoid) [1 2 3])
 
 (defrecord Network [layers])
 
-(defn create-network
-  [input-size layer-sizes]
-  (Network. (vec (map (fn [[i neuron-count]]
-                        (create-layer neuron-count
-                                      (if (zero? i) input-size
-                                          (nth layer-sizes (dec i)))))
-                      (map-indexed vector layer-sizes)))))
 
-(create-network 3 [3 3 3])
-
-(defn network-output
-  [network inputs]
-  (reduce (fn [inputs layer]
-            (map (fn [neuron]
-                   (feed-forward inputs (:weights neuron) (:biases neuron)))
-                 (:neurons layer)))
-          inputs
-          (:layers network)))
-
-(network-output (create-network 2 [3 3 2]) [1 0])
